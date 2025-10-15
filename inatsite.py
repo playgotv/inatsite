@@ -1,25 +1,44 @@
 import sys
 from functools import partial
-print = partial(print, flush=True)  # tum print'ler aninda yazsin [web:121][web:115]
+print = partial(print, flush=True)
 
 import requests
+from bs4 import BeautifulSoup
 import time
 import logging
-from http.client import HTTPConnection  # py3
+from http.client import HTTPConnection
+from itertools import cycle
 
-# HTTP debug (istege bagli ayrintili log)
-def enable_http_debug():
-    HTTPConnection.debuglevel = 1  # alt seviye HTTP loglari [web:132]
-    logging.basicConfig(level=logging.DEBUG)
-    requests_log = logging.getLogger("requests.packages.urllib3")
-    requests_log.setLevel(logging.DEBUG)
-    requests_log.propagate = True  # loglari konsola akit [web:132][web:37]
+# --- Ücretsiz Proxy Listesi Çekme Bölümü (Değişiklik yok) ---
+def get_free_proxies():
+    """sslproxies.org'dan ücretsiz proxy listesi çeker."""
+    url = "https://www.sslproxies.org/"
+    try:
+        print("-> Güncel proxy listesi alınıyor...")
+        response = requests.get(url, timeout=15)
+        soup = BeautifulSoup(response.text, "lxml")
+        proxies = []
+        # Tablodaki satırları bul (ilk satır başlık olduğu için atla)
+        for row in soup.find("table", attrs={"class": "table"}).find_all("tr")[1:]:
+            tds = row.find_all("td")
+            ip = tds[0].text.strip()
+            port = tds[1].text.strip()
+            # Sadece HTTPS destekleyenleri (yes) alalım
+            if 'yes' in tds[6].text.strip().lower():
+                proxies.append(f"http://{ip}:{port}")
+        
+        print(f"-> {len(proxies)} adet potansiyel proxy bulundu.")
+        return proxies
+    except Exception as e:
+        print(f"-> Proxy listesi alınırken hata oluştu: {e}")
+        return []
 
+# --- ANA FONKSİYON (MANTIK DEĞİŞİKLİĞİ İLE) ---
 def find_current_domain():
     base_url = "https://www.inattvizle{}.top/"
     start_number = 265
     max_attempts = 120
-    timeout_sec = 8
+    timeout_sec = 10
 
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -31,74 +50,84 @@ def find_current_domain():
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Referer": "https://www.google.com/"
+        "Pragma": "no-cache"
     }
 
     sep = "=" * 50
-    print(sep); print("INAT TV GUNCEL DOMAIN BULUCU (Pydroid net cikti)"); print(sep)
+    print(sep); print("INAT TV GUNCEL DOMAIN BULUCU (Proxy ile)"); print(sep)
 
-    s = requests.Session()
-    s.headers.update(headers)
+    proxies = get_free_proxies()
+    if not proxies:
+        print("-> Hiç proxy bulunamadı. İşlem durduruluyor.")
+        return None
+    
+    proxy_pool = cycle(proxies)
 
     for i in range(start_number, start_number + max_attempts):
         url = base_url.format(i)
         attempt = i - start_number + 1
-        print("[" + str(attempt) + "/" + str(max_attempts) + "] Deneniyor: " + url)
+        print(f"[{attempt}/{max_attempts}] Deneniyor: {url}")
 
-        try:
-            # HEAD (opsiyonel hizli kontrol)
-            head_ok = False
+        # Her domain için proxy listesini bir kez dönmeyi dene
+        for _ in range(len(proxies)):
+            proxy = next(proxy_pool)
+            print(f"    -> Proxy ile deneniyor: {proxy}")
+            
+            proxy_dict = {"http": proxy, "https": proxy}
+            
             try:
-                h = s.head(url, timeout=timeout_sec, allow_redirects=True)
-                print("    -> HEAD status: " + str(h.status_code))
-                head_ok = h.status_code in (200, 301, 302)
-            except Exception as ehead:
-                print("    -> HEAD hata: " + str(ehead))
+                r = requests.get(url, headers=headers, proxies=proxy_dict, timeout=timeout_sec, allow_redirects=True)
+                sc = r.status_code
+                final_url = r.url
+                print(f"    -> GET status: {sc}")
 
-            # GET
-            r = s.get(url, timeout=timeout_sec, allow_redirects=True)
-            sc = r.status_code
-            final_url = r.url
-            print("    -> GET status: " + str(sc))
-            if final_url != url:
-                print("    -> Yonlendirme: " + final_url)
+                # =================================================================== #
+                #                       >>> YENİ MANTIK <<<                         #
+                # =================================================================== #
 
-            if sc in (200, 301, 302) or head_ok:
-                to_write = final_url if sc in (301, 302) else url
-                try:
-                    with open("inat.txt", "w", encoding="utf-8") as f:
-                        f.write(to_write)
-                    print("    -> Kaydedildi: inat.txt")
-                except Exception as efile:
-                    print("    -> Dosyaya yazma hatasi: " + str(efile))
-                print("BASARILI! Guncel domain: " + to_write)
-                return to_write  # bulur bulmaz bitir
-
-            if sc == 403:
-                print("    -> 403 alindi, tekrar denenecek...")
-                time.sleep(1.0)
-                r2 = s.get(url, timeout=timeout_sec, allow_redirects=True)
-                print("    -> GET(tekrar) status: " + str(r2.status_code))
-                if r2.status_code in (200, 301, 302):
+                # ÖNCELİK 1: Yönlendirme var mı? Varsa, durum kodu ne olursa olsun hedefi bulduk demektir.
+                if final_url != url:
+                    print(f"    -> Yönlendirme algılandı: {final_url}")
                     try:
                         with open("inat.txt", "w", encoding="utf-8") as f:
-                            f.write(r2.url)
-                        print("    -> Kaydedildi: inat.txt")
-                    except Exception as efile2:
-                        print("    -> Dosyaya yazma hatasi: " + str(efile2))
-                    print("BASARILI! Guncel domain: " + r2.url)
-                    return r2.url
+                            f.write(final_url)
+                        print("    -> Yönlendirilen adres kaydedildi: inat.txt")
+                    except Exception as efile:
+                        print(f"    -> Dosyaya yazma hatası: {efile}")
+                    
+                    print(f"BASARILI! Guncel domain: {final_url}")
+                    return final_url # <<<--- İşlemi başarıyla bitir.
 
-        except requests.exceptions.Timeout:
-            print("    -> Zaman asimi (Timeout)")
-        except requests.exceptions.ConnectionError:
-            print("    -> Baglanti hatasi")
-        except Exception as e:
-            print("    -> Hata: " + str(e))
+                # ÖNCELİK 2: Yönlendirme yoksa, durum kodunu kontrol et.
+                if sc == 200:
+                    to_write = url
+                    try:
+                        with open("inat.txt", "w", encoding="utf-8") as f:
+                            f.write(to_write)
+                        print("    -> Doğrudan adres kaydedildi: inat.txt")
+                    except Exception as efile:
+                        print(f"    -> Dosyaya yazma hatası: {efile}")
 
-        time.sleep(0.2)
-        print("")  # satir sonu tamponu bosaltsin
+                    print(f"BASARILI! Guncel domain: {to_write}")
+                    return to_write # <<<--- İşlemi başarıyla bitir.
+
+                # BAŞARISIZLIK DURUMLARI: Yönlendirme yok ve durum kodu iyi değil.
+                if sc in (403, 407):
+                     print("    -> Proxy engellenmiş veya hatalı (403/407). Diğer proxy'e geçiliyor.")
+                     continue # Sonraki proxy'i dene
+                else:
+                    # Domain çalışmıyor olabilir (404 vb.), aynı proxy ile sonraki domaini deneyelim.
+                    break 
+
+            except requests.exceptions.ProxyError:
+                print("    -> Proxy hatası. Başka bir proxy deneniyor...")
+            except requests.exceptions.Timeout:
+                print("    -> Zaman aşımı (Timeout). Bir sonraki denemeye geçiliyor...")
+                break
+            except requests.exceptions.RequestException as e:
+                print(f"    -> Genel istek hatası: {type(e).__name__}. Başka bir proxy deneniyor...")
+            
+        print("")
 
     print(sep)
     print("BASARISIZ: aralikta uygun domain bulunamadi.")
@@ -106,96 +135,8 @@ def find_current_domain():
     return None
 
 if __name__ == "__main__":
-    # İsterseniz HTTP ayrıntılı log açın:
-    # enable_http_debug()  # gerektiginde aktif edin [web:132][web:37]
     res = find_current_domain()
     if res:
-        print("Guncel domain: " + res)
+        print(f"Guncel domain: {res}")
     else:
-        print("Bulunamadi")            r = s.get(url, timeout=timeout_sec, allow_redirects=True)
-            sc = r.status_code
-            final_url = r.url
-
-            if sc in (200, 301, 302) or head_ok:
-                to_write = final_url if sc in (301, 302) else url
-                with open("inat.txt", "w", encoding="utf-8") as f:
-                    f.write(to_write)
-                return to_write
-
-            if sc == 403:
-                # iki ek deneme, arada bekleme
-                for _ in range(2):
-                    time.sleep(1.0)
-                    r2 = s.get(url, timeout=timeout_sec, allow_redirects=True)
-                    if r2.status_code in (200, 301, 302):
-                        with open("inat.txt", "w", encoding="utf-8") as f:
-                            f.write(r2.url)
-                        return r2.url
-
-        except Exception:
-            pass
-
-        time.sleep(1.0)
-
-    return None
-
-if __name__ == "__main__":
-    res = find_current_domain()
-    print("Guncel domain: " + res if res else "Bulunamadi")        try:
-            head_ok = False
-            try:
-                h = s.head(url, timeout=timeout_sec, allow_redirects=True)
-                log("    -> HEAD status: " + str(h.status_code))
-                head_ok = h.status_code in (200, 301, 302)
-            except Exception as ehead:
-                log("    -> HEAD hata: " + str(ehead))
-
-            r = s.get(url, timeout=timeout_sec, allow_redirects=True)
-            sc = r.status_code
-            final_url = r.url
-            log("    -> GET status: " + str(sc))
-            if final_url != url:
-                log("    -> Yonlendirme: " + final_url)
-
-            if sc in (200, 301, 302) or head_ok:
-                to_write = final_url if sc in (301, 302) else url
-                try:
-                    with open("inat.txt", "w", encoding="utf-8") as f:
-                        f.write(to_write)
-                    log("    -> Kaydedildi: inat.txt")
-                except Exception as efile:
-                    log("    -> Dosyaya yazma hatasi: " + str(efile))
-                log("BASARILI! Guncel domain: " + to_write)
-                return to_write  # Bulur bulmaz fonksiyondan çık
-
-            if sc == 403:
-                log("    -> 403 alindi, tekrar denenecek...")
-                time.sleep(1.0)
-                r2 = s.get(url, timeout=timeout_sec, allow_redirects=True)
-                log("    -> GET(tekrar) status: " + str(r2.status_code))
-                if r2.status_code in (200, 301, 302):
-                    try:
-                        with open("inat.txt", "w", encoding="utf-8") as f:
-                            f.write(r2.url)
-                        log("    -> Kaydedildi: inat.txt")
-                    except Exception as efile2:
-                        log("    -> Dosyaya yazma hatasi: " + str(efile2))
-                    log("BASARILI! Guncel domain: " + r2.url)
-                    return r2.url  # Bulur bulmaz çık
-
-        except requests.exceptions.Timeout:
-            log("    -> Zaman asimi (Timeout)")
-        except requests.exceptions.ConnectionError:
-            log("    -> Baglanti hatasi")
-        except Exception as e:
-            log("    -> Hata: " + str(e))
-
-        time.sleep(0.2)
-        log("")
-
-    log("BASARISIZ: aralikta uygun domain bulunamadi.")
-    return None
-
-if __name__ == "__main__":
-    res = find_current_domain()
-    # input(...) satırı tamamen kaldırıldı; script sonuçtan sonra otomatik biter [web:23][web:34].
+        print("Bulunamadi")
