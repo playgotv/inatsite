@@ -2,15 +2,15 @@ name: Run inatsite
 
 on:
   schedule:
-    - cron: '0 */12 * * *'   # Her 12 saatte bir (UTC)
-  workflow_dispatch: {}       # Elle tetikleme
+    - cron: '0 */12 * * *'  # Her 12 saatte bir (UTC) [00:00, 12:00]
+  workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # commit/push için gerekli [web:99][web:101]
+      contents: write
 
     steps:
       - name: Checkout
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'   # 3.11/3.12 da olur [web:82]
+          python-version: '3.x'
 
       - name: Install dependencies
         run: |
@@ -28,10 +28,12 @@ jobs:
 
       - name: Run script
         run: |
+          set -e
           python inatsite.py
 
       - name: Commit output if changed
         run: |
+          set -e
           if [ -f "inat.txt" ]; then
             if ! git diff --quiet -- inat.txt; then
               git config user.name "github-actions[bot]"
@@ -44,3 +46,4 @@ jobs:
             fi
           else
             echo "inat.txt not found"
+          fi
