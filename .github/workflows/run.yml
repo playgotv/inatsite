@@ -19,49 +19,28 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11' # Belirli bir versiyon kullanmak daha tutarlıdır
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # YENİ EKLENEN ADIM: Python betiğini çalıştırmadan önce satır sonlarını düzeltir.
-      - name: Convert line endings to LF
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dos2unix
-          dos2unix inatsite.py
-
       - name: Run script
         run: |
           python inatsite.py
 
-      - name: Commit output if changed
+      - name: Commit and push if changed
         run: |
-          if [ -f "inat.txt" ]; then
-            if ! git diff --quiet -- inat.txt; then
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git add inat.txt
-              git commit -m "Update inat.txt [skip ci]"
-              git push
-            else
-              echo "No changes in inat.txt"
-            fi
+          git pull --rebase
+          if [ -f "inat.txt" ] && ! git diff --quiet inat.txt; then
+            echo "Değişiklik bulundu, commit hazırlanıyor..."
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .gitattributes inat.txt # .gitattributes'i de ekleyelim
+            git commit -m "Update inat.txt [skip ci]"
+            git push
+            echo "Değişiklikler başarıyla pushlandı."
           else
-            echo "inat.txt not found"
-          fi
-          if [ -f "inat.txt" ]; then
-            if ! git diff --quiet -- inat.txt; then
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git add inat.txt
-              git commit -m "Update inat.txt [skip ci]"
-              git push
-            else
-              echo "No changes in inat.txt"
-            fi
-          else
-            echo "inat.txt not found"
+            echo "inat.txt dosyasında değişiklik yok veya dosya bulunamadı."
           fi
