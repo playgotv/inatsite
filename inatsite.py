@@ -2,9 +2,13 @@ import requests
 import sys
 import time
 
+def log(msg):
+    print(msg)
+    sys.stdout.flush()
+
 def find_current_domain():
     base_url = "https://www.inattvizle{}.top/"
-    start_number = 271
+    start_number = 267
     max_attempts = 120
     timeout_sec = 8
 
@@ -17,10 +21,6 @@ def find_current_domain():
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-User": "?1",
-        "Sec-Fetch-Dest": "document",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "Referer": "https://www.google.com/"
@@ -31,43 +31,64 @@ def find_current_domain():
 
     for i in range(start_number, start_number + max_attempts):
         url = base_url.format(i)
-        sys.stdout.flush()
+        attempt = i - start_number + 1
+        log("[" + str(attempt) + "/" + str(max_attempts) + "] Deneniyor: " + url)
+
         try:
             head_ok = False
             try:
                 h = s.head(url, timeout=timeout_sec, allow_redirects=True)
+                log("    -> HEAD status: " + str(h.status_code))
                 head_ok = h.status_code in (200, 301, 302)
-            except Exception:
-                pass
+            except Exception as ehead:
+                log("    -> HEAD hata: " + str(ehead))
 
             r = s.get(url, timeout=timeout_sec, allow_redirects=True)
             sc = r.status_code
             final_url = r.url
+            log("    -> GET status: " + str(sc))
+            if final_url != url:
+                log("    -> Yonlendirme: " + final_url)
 
             if sc in (200, 301, 302) or head_ok:
                 to_write = final_url if sc in (301, 302) else url
-                with open("inat.txt", "w", encoding="utf-8") as f:
-                    f.write(to_write)
-                return to_write
+                try:
+                    with open("inat.txt", "w", encoding="utf-8") as f:
+                        f.write(to_write)
+                    log("    -> Kaydedildi: inat.txt")
+                except Exception as efile:
+                    log("    -> Dosyaya yazma hatasi: " + str(efile))
+                log("BASARILI! Guncel domain: " + to_write)
+                return to_write  # Bulur bulmaz fonksiyondan çık
 
             if sc == 403:
+                log("    -> 403 alindi, tekrar denenecek...")
                 time.sleep(1.0)
                 r2 = s.get(url, timeout=timeout_sec, allow_redirects=True)
+                log("    -> GET(tekrar) status: " + str(r2.status_code))
                 if r2.status_code in (200, 301, 302):
-                    with open("inat.txt", "w", encoding="utf-8") as f:
-                        f.write(r2.url)
-                    return r2.url
+                    try:
+                        with open("inat.txt", "w", encoding="utf-8") as f:
+                            f.write(r2.url)
+                        log("    -> Kaydedildi: inat.txt")
+                    except Exception as efile2:
+                        log("    -> Dosyaya yazma hatasi: " + str(efile2))
+                    log("BASARILI! Guncel domain: " + r2.url)
+                    return r2.url  # Bulur bulmaz çık
 
-        except Exception:
-            pass
+        except requests.exceptions.Timeout:
+            log("    -> Zaman asimi (Timeout)")
+        except requests.exceptions.ConnectionError:
+            log("    -> Baglanti hatasi")
+        except Exception as e:
+            log("    -> Hata: " + str(e))
 
         time.sleep(0.2)
+        log("")
 
+    log("BASARISIZ: aralikta uygun domain bulunamadi.")
     return None
 
 if __name__ == "__main__":
-    found = find_current_domain()
-    if found:
-        print("Guncel domain: " + found)
-    else:
-        print("Bulunamadi")
+    res = find_current_domain()
+    # input(...) satırı tamamen kaldırıldı; script sonuçtan sonra otomatik biter [web:23][web:34].
