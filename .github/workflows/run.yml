@@ -1,0 +1,46 @@
+name: Run inatsite
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'   # Her 12 saatte bir (UTC)
+  workflow_dispatch: {}       # Elle tetikleme
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # commit/push için gerekli [web:99][web:101]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'   # 3.11/3.12 da olur [web:82]
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run script
+        run: |
+          python inatsite.py
+
+      - name: Commit output if changed
+        run: |
+          if [ -f "inat.txt" ]; then
+            if ! git diff --quiet -- inat.txt; then
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add inat.txt
+              git commit -m "Update inat.txt [skip ci]"
+              git push
+            else
+              echo "No changes in inat.txt"
+            fi
+          else
+            echo "inat.txt not found"
