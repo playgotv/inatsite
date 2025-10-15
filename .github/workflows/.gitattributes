@@ -1,0 +1,3 @@
+# Bu dosya, Python dosyalarının her zaman Linux uyumlu (LF) satır sonlarıyla
+# çalışmasını garanti eder, böylece yavaş olan dönüştürme adımına gerek kalmaz.
+*.py text eol=lf
